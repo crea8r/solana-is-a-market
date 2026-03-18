@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import MarketTable from './components/MarketTable';
 import Sparkline from './components/Sparkline';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8787';
+const API_BASE = import.meta.env.VITE_API_BASE || `${window.location.protocol}//${window.location.hostname}:8787`;
 
 function badgeStyle(regime) {
   if (regime === 'RISK-ON') return 'bg-emerald-500/20 text-emerald-300 border-emerald-700';
