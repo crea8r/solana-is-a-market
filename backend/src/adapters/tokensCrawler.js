@@ -73,31 +73,50 @@ async function scrapeWithPlaywright() {
 }
 
 async function fallbackSolanaRows() {
-  try {
-    const { data } = await axios.get("https://api.dexscreener.com/latest/dex/search", {
-      params: { q: "solana" },
-      timeout: 10000,
-      headers: { "User-Agent": "Mozilla/5.0" },
-    });
+  const watch = ["SOL", "JUP", "WIF", "BONK", "PYTH", "RAY", "JTO", "BOME", "POPCAT", "MEW"];
 
-    const rows = (data?.pairs || [])
-      .filter((p) => p?.chainId === "solana" && p?.baseToken?.symbol)
-      .filter((p) => Number(p?.liquidity?.usd || 0) >= 50000)
-      .filter((p) => Number(p?.volume?.h24 || 0) >= 20000)
-      .filter((p) => Number(p?.priceChange?.h24 || 0) <= 95 && Number(p?.priceChange?.h24 || 0) >= -95)
-      .slice(0, 25)
-      .map((p) => ({
-        symbol: p.baseToken.symbol,
-        name: p.baseToken.name || p.baseToken.symbol,
-        last: p.priceUsd != null ? Number(p.priceUsd) : null,
-        changePct: p.priceChange?.h24 != null ? Number(p.priceChange.h24) : null,
-        volume: p.volume?.h24 != null ? Number(p.volume.h24) : null,
-        liquidity: p.liquidity?.usd != null ? Number(p.liquidity.usd) : null,
+  try {
+    const responses = await Promise.all(
+      watch.map((s) =>
+        axios
+          .get("https://api.dexscreener.com/latest/dex/search", {
+            params: { q: `${s}/USDC` },
+            timeout: 9000,
+            headers: { "User-Agent": "Mozilla/5.0" },
+          })
+          .then((r) => r.data)
+          .catch(() => null)
+      )
+    );
+
+    const rows = [];
+    for (const data of responses) {
+      const pick = (data?.pairs || [])
+        .filter((p) => p?.chainId === "solana" && p?.baseToken?.symbol)
+        .filter((p) => Number(p?.liquidity?.usd || 0) >= 50000)
+        .sort((a, b) => Number(b?.volume?.h24 || 0) - Number(a?.volume?.h24 || 0))[0];
+
+      if (!pick) continue;
+      rows.push({
+        symbol: pick.baseToken.symbol,
+        name: pick.baseToken.name || pick.baseToken.symbol,
+        last: pick.priceUsd != null ? Number(pick.priceUsd) : null,
+        changePct: pick.priceChange?.h24 != null ? Number(pick.priceChange.h24) : null,
+        volume: pick.volume?.h24 != null ? Number(pick.volume.h24) : null,
+        liquidity: pick.liquidity?.usd != null ? Number(pick.liquidity.usd) : null,
         marketSession: "CRYPTO_24_7",
         source: "dexscreener-fallback",
-      }));
+      });
+    }
 
-    if (rows.length) return rows;
+    const dedup = Object.values(
+      rows.reduce((acc, r) => {
+        if (!acc[r.symbol] || (r.volume || 0) > (acc[r.symbol].volume || 0)) acc[r.symbol] = r;
+        return acc;
+      }, {})
+    );
+
+    if (dedup.length) return dedup;
   } catch {}
 
   return [
