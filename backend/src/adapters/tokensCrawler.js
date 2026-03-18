@@ -82,6 +82,9 @@ async function fallbackSolanaRows() {
 
     const rows = (data?.pairs || [])
       .filter((p) => p?.chainId === "solana" && p?.baseToken?.symbol)
+      .filter((p) => Number(p?.liquidity?.usd || 0) >= 100000)
+      .filter((p) => Number(p?.volume?.h24 || 0) >= 50000)
+      .filter((p) => Number(p?.priceChange?.h24 || 0) <= 80 && Number(p?.priceChange?.h24 || 0) >= -80)
       .slice(0, 25)
       .map((p) => ({
         symbol: p.baseToken.symbol,
