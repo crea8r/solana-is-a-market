@@ -1,3 +1,4 @@
+import axios from "axios";
 import { chromium } from "playwright";
 import { toNumber } from "../utils/parse.js";
 
@@ -37,13 +38,14 @@ async function scrapeWithPlaywright() {
           const symbol = (tds[0].match(/[A-Z0-9]{2,12}/)?.[0] || "").trim();
           if (!symbol) continue;
 
+          const numericCell = tds.find((x, i) => i > 0 && /\d/.test(x) && !x.includes('%')) || null;
           parsed.push({
             symbol,
             name: tds[0],
-            last: tds.find((x) => x.includes("$")) || null,
+            last: tds.find((x) => /\$\s*[\d,.]+/.test(x)) || numericCell,
             changePct: tds.find((x) => x.includes("%")) || null,
-            volume: tds.find((x) => /vol|volume|\$[\d,.]+/i.test(x)) || null,
-            liquidity: tds.find((x) => /liq|liquidity|\$[\d,.]+/i.test(x)) || null,
+            volume: tds.find((x) => /vol|volume/i.test(x)) || tds.filter((x) => /\$\s*[\d,.]+/.test(x))[1] || null,
+            liquidity: tds.find((x) => /liq|liquidity/i.test(x)) || tds.filter((x) => /\$\s*[\d,.]+/.test(x))[2] || null,
           });
         }
       }
@@ -70,7 +72,31 @@ async function scrapeWithPlaywright() {
   }
 }
 
-function fallbackSolanaRows() {
+async function fallbackSolanaRows() {
+  try {
+    const { data } = await axios.get("https://api.dexscreener.com/latest/dex/search", {
+      params: { q: "solana" },
+      timeout: 10000,
+      headers: { "User-Agent": "Mozilla/5.0" },
+    });
+
+    const rows = (data?.pairs || [])
+      .filter((p) => p?.chainId === "solana" && p?.baseToken?.symbol)
+      .slice(0, 25)
+      .map((p) => ({
+        symbol: p.baseToken.symbol,
+        name: p.baseToken.name || p.baseToken.symbol,
+        last: p.priceUsd != null ? Number(p.priceUsd) : null,
+        changePct: p.priceChange?.h24 != null ? Number(p.priceChange.h24) : null,
+        volume: p.volume?.h24 != null ? Number(p.volume.h24) : null,
+        liquidity: p.liquidity?.usd != null ? Number(p.liquidity.usd) : null,
+        marketSession: "CRYPTO_24_7",
+        source: "dexscreener-fallback",
+      }));
+
+    if (rows.length) return rows;
+  } catch {}
+
   return [
     { symbol: "SOL", name: "Solana", last: null, changePct: null, volume: null, liquidity: null, marketSession: "CRYPTO_24_7", source: "fallback" },
     { symbol: "JUP", name: "Jupiter", last: null, changePct: null, volume: null, liquidity: null, marketSession: "CRYPTO_24_7", source: "fallback" },
@@ -84,13 +110,13 @@ export async function fetchSolanaMarket() {
     return {
       market: "solana",
       asOf: new Date().toISOString(),
-      rows: rows.length ? rows : fallbackSolanaRows(),
+      rows: rows.length ? rows : await fallbackSolanaRows(),
     };
   } catch {
     return {
       market: "solana",
       asOf: new Date().toISOString(),
-      rows: fallbackSolanaRows(),
+      rows: await fallbackSolanaRows(),
       warning: "tokens.xyz crawl failed; using fallback rows",
     };
   }
